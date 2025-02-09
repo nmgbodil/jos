@@ -181,6 +181,17 @@ debuginfo_eip(uintptr_t addr, struct Eipdebuginfo *info)
 	//	which one.
 	// Your code here.
 
+	//LLMPrompt: Perform search on STABS entries to find N_SLINE for corresponding arr
+	//within [lline, rline]
+
+	stab_binsearch(stabs, &lline, &rline, N_SLINE, addr);
+	if (lline <= rline) {
+	// If found, store the line number in info->eip_line
+	info->eip_line = stabs[lline].n_desc;
+	} else {
+	// If no line stab found, return -1
+	return -1;
+	}
 
 	// Search backwards from the line number for the relevant filename
 	// stab.

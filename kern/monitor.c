@@ -25,6 +25,9 @@ struct Command {
 static struct Command commands[] = {
 	{ "help", "Display this list of commands", mon_help },
 	{ "kerninfo", "Display information about the kernel", mon_kerninfo },
+	{ "hidden", "Run hidden test cases", exec_hidden_cases},
+	{ "backtrace", "Display a stack backtrace", mon_backtrace},
+	{ "show", "Display ASCII art", show}
 };
 
 /***** Implementations of basic kernel monitor commands *****/
@@ -51,7 +54,7 @@ mon_kerninfo(int argc, char **argv, struct Trapframe *tf)
 	cprintf("  edata  %08x (virt)  %08x (phys)\n", edata, edata - KERNBASE);
 	cprintf("  end    %08x (virt)  %08x (phys)\n", end, end - KERNBASE);
 	cprintf("Kernel executable memory footprint: %dKB\n",
-		ROUNDUP(end - entry, 1024) / 1024);
+	ROUNDUP(end - entry, 1024) / 1024);
 	return 0;
 }
 
@@ -61,10 +64,52 @@ mon_backtrace(int argc, char **argv, struct Trapframe *tf)
 	// LAB 1: Your code here.
     // HINT 1: use read_ebp().
     // HINT 2: print the current ebp on the first line (not current_ebp[0])
+
+	uint32_t *ebp = (uint32_t*)read_ebp();
+	struct Eipdebuginfo info;
+	cprintf("Stack backtrace:\n");
+
+	// Walk the stack frames
+	while (ebp != 0) {
+		uint32_t saved_ebp = ebp[0];
+		uint32_t return_eip = ebp[1];
+
+		uint32_t arg0 = ebp[2];
+		uint32_t arg1 = ebp[3];
+		uint32_t arg2 = ebp[4];
+		uint32_t arg3 = ebp[5];
+		uint32_t arg4 = ebp[6];
+
+		cprintf(
+			" ebp %08x eip %08x args %08x &08x %08x %08x %08x\n",
+			(uint32_t)ebp,
+			return_eip,
+			arg0,
+			arg1,
+			arg2,
+			arg3,
+			arg4
+		);
+
+		//LLMPrompt: print offset
+		if (debuginfo_eip(return_eip, &info) == 0) {
+			cprintf(" %s:%d: %.*s+%d\n",
+			info.eip_file,
+			info.eip_line,
+			info.eip_fn_namelen,
+			info.eip_fn_name,
+			return_eip - info.eip_fn_addr);
+		}
+		//Move to the previous stack frame
+		ebp = (uint32_t*)saved_ebp;
+	}
 	return 0;
 }
 
-
+int exec_hidden_cases(int argc, char **argv, struct Trapframe *tf) {
+	hidden_test_cases();
+	return 0;
+}
 
 /***** Kernel monitor command interpreter *****/
 
@@ -125,4 +170,55 @@ monitor(struct Trapframe *tf)
 			if (runcmd(buf, tf) < 0)
 				break;
 	}
+}
+
+// ANSI escape codes for colors
+#define RED "\033[31m"
+#define MAGENTA "\033[35m"
+#define YELLOW "\033[1;93m"
+#define DARK_BLUE "\033[38;5;17m"  // Navy Blue
+#define LIGHT_BLUE "\033[38;5;195m" // Very Light Blue
+#define WHITE "\033[97m"
+#define RESET "\033[0m"
+
+int
+show(int argc, char **argv, struct Trapframe* tf) {
+    const char *ascii_art[] = {
+        YELLOW "@@@@@@@@@@@@@@@@@@@@@@@@%" RESET "       " RED ".*******************." RESET "       " YELLOW "@@@@@@@@@@@@@@@@@@@@@@@@" RESET,
+        YELLOW "@@@@@@@@@@@@@@@@@@@@@@&" RESET "      " RED ",*/******************////*//," RESET "       " YELLOW ".@@@@@@@@@@@@@@@@@@" RESET,
+        YELLOW "@@@@@@@@@@@@@@@@@@@@@." RESET "      " RED "**********************************" RESET "     " YELLOW ".@@@@@@@@@@@@@@@@@" RESET,
+        YELLOW "@@@@@@@@@@@@@@@@@@@@" RESET "      " RED "*********/*********/*/*///***//*****, " RESET "      " YELLOW "@@@@@@@@@@@@" RESET,
+        YELLOW "@@@@@@@@@@@@@@@@@@@" RESET "      " RED "***************.                     " RESET "           " YELLOW "@@@@@@@@@@" RESET,
+        YELLOW "@@@@@@@@@@@@@@@@@@/" RESET "      " RED "************                           " RESET "            " YELLOW ",@@@@@@@@" RESET,
+        YELLOW "@@@@@@@@@@@@@@@@@@" RESET "      " RED "***********        " RESET LIGHT_BLUE ".*#%%%%%%%%%%%%%%%%%%%%#/ " RESET "        " YELLOW ".@@@@@@@" RESET,
+        YELLOW "@@@@@@@@@@@@@@@@@," RESET "      " RED "***********      " RESET DARK_BLUE ".((" RESET LIGHT_BLUE "%%%%%%%%%%%" RESET WHITE "&@@@@@@@@@@@&" RESET LIGHT_BLUE "%%%%% " RESET "      " YELLOW "@@@@" RESET,
+        YELLOW "@@@@@@@@@@@@@@@@@" RESET "      " RED "*********/*/     " RESET DARK_BLUE ".(((" RESET LIGHT_BLUE "#%%%%%%%%%%%" RESET WHITE "&&@@@@@@@@@@&" RESET LIGHT_BLUE "%%%%%%* " RESET "     " YELLOW "@@@" RESET,
+        YELLOW "@@@@@@@&,       " RESET "       " RED "*********/**     " RESET DARK_BLUE "/(((((" RESET LIGHT_BLUE "%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%/ " RESET "    " YELLOW ".@@@" RESET,
+        YELLOW "@@@/" RESET "                   " RED "************     " RESET DARK_BLUE "/((((((" RESET LIGHT_BLUE "#%%%%%%%%%%%%%%%%%%%%%%%%%%%#( " RESET "    " YELLOW "@" RESET,
+        YELLOW "@&" RESET RED "       ,*//*. " RESET "       " RED "************.    " RESET DARK_BLUE ",((((((((((" RESET LIGHT_BLUE "#%%%%%%%%%%%%%#" RESET DARK_BLUE "((((((((((/ " RESET "    " YELLOW "@" RESET,
+        YELLOW "@" RESET RED "      *//***** " RESET "       " RED "**************      " RESET DARK_BLUE "(((((((((((((((((((((((((((((((((* " RESET "    " YELLOW "@" RESET,
+        YELLOW "@" RESET RED "     ********, " RESET "       " RED "**************,       " RESET DARK_BLUE "/(((((((((((((((((((((((((((/   " RESET "    " YELLOW "@" RESET,
+        YELLOW "@" RESET RED "     ********  " RESET "       " RED "**************/*         " RESET DARK_BLUE ".((((((((((((((((((/,       " RESET "   " YELLOW "%@" RESET,
+        YELLOW "@" RESET RED "    .********  " RESET "       " RED "*****************,                                     " RESET " " YELLOW "@@@@" RESET,
+        YELLOW "&" RESET RED "    ,********  " RESET "       " RED "********************,                         .**/. " RESET "    " YELLOW "&@@@@" RESET,
+        YELLOW "#" RESET RED "    *********  " RESET "       " RED "***************************,,.....,,**************. " RESET "    " YELLOW "#@@@@" RESET,
+        YELLOW "/" RESET RED "    *********  " RESET "       " RED "*************************/*********/**************, " RESET "    " YELLOW "@@@@" RESET,
+        YELLOW "," RESET RED "    *********  " RESET "       " RED "*************************************************** " RESET "    " YELLOW "%@@@" RESET,
+        YELLOW "" RESET RED "     *********  " RESET "       " RED "*************************************************** " RESET "    " YELLOW "*@@@" RESET,
+        YELLOW "" RESET RED "    .*********. " RESET "       " RED "*************************************************** " RESET "    " YELLOW "*@@@" RESET,
+        YELLOW "" RESET RED "    .*********. " RESET "       " RED "*************************************************** " RESET "    " YELLOW "#@@@" RESET,
+        YELLOW "," RESET RED "   .*********. " RESET "       " RED "*************************************************** " RESET "    " YELLOW "@@@" RESET,
+        YELLOW "/" RESET RED "    *********. " RESET "       " RED "**************************************************, " RESET "    " YELLOW "@@@" RESET,
+        YELLOW "%" RESET RED "    *********. " RESET "       " RED "**************************************************. " RESET "    " YELLOW "#@@@" RESET,
+        YELLOW "@" RESET RED "    ,********, " RESET "       " RED "************************************************* " RESET "    " YELLOW "@@@@@" RESET,
+        YELLOW "@" RESET RED "     ********* " RESET "       " RED "************************************************, " RESET "    " YELLOW ",@@@@" RESET,
+        YELLOW "@&" RESET RED "     .******, " RESET "       " RED "************************************************ " RESET "    " YELLOW "#@@@@" RESET,
+        YELLOW "@@@," RESET RED "                " RESET "   " RED ".*******************.    .,,********************," RESET "    " YELLOW "@@@@@" RESET
+    };
+
+    for (size_t i = 0; i < sizeof(ascii_art) / sizeof(ascii_art[0]); i++) {
+        cprintf("%s\n", ascii_art[i]);
+    }
+
+    return 0;
 }
