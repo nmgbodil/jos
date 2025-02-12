@@ -10,6 +10,7 @@
 #include <kern/console.h>
 #include <kern/monitor.h>
 #include <kern/kdebug.h>
+#include <kern/hidden.h>
 
 #define CMDBUF_SIZE	80	// enough for one VGA text line
 
@@ -27,7 +28,10 @@ static struct Command commands[] = {
 	{ "kerninfo", "Display information about the kernel", mon_kerninfo },
 	{ "hidden", "Run hidden test cases", exec_hidden_cases},
 	{ "backtrace", "Display a stack backtrace", mon_backtrace},
-	{ "show", "Display ASCII art", show}
+	{ "show", "Display ASCII art", show},
+	{ "showmappings", "Show physical mappings for a virtual address range", mon_showmappings },
+	{ "setperm", "Set, clear, or change permissions of a mapping", mon_setperm },
+	{ "memdump", "Dump contents of memory for a given range", mon_memdump }
 };
 
 /***** Implementations of basic kernel monitor commands *****/
@@ -220,5 +224,79 @@ show(int argc, char **argv, struct Trapframe* tf) {
         cprintf("%s\n", ascii_art[i]);
     }
 
+    return 0;
+}
+
+//LLM Prompt: Display physical page mapppings at virtual addresses
+// Function to display page mappings for a given virtual address range
+int mon_showmappings(int argc, char **argv, struct Trapframe *tf) {
+    if (argc != 3) {
+        cprintf("Usage: showmappings start_va end_va\n");
+        return 0;
+    }
+    uintptr_t start = strtol(argv[1], NULL, 0);
+    uintptr_t end = strtol(argv[2], NULL, 0);
+
+    for (; start <= end; start += PGSIZE) {
+        pte_t *pte = pgdir_walk(kern_pgdir, (void *)start, 0);
+        if (pte && (*pte & PTE_P)) {
+            cprintf("VA: 0x%08x -> PA: 0x%08x, Perms: %c%c%c\n",
+                    start, PTE_ADDR(*pte),
+                    (*pte & PTE_U) ? 'U' : '-',
+                    (*pte & PTE_W) ? 'W' : '-',
+                    (*pte & PTE_P) ? 'P' : '-');
+        } else {
+            cprintf("VA: 0x%08x -> No Mapping\n", start);
+        }
+    }
+    return 0;
+}
+
+// Function to modify page permissions
+int mon_setperm(int argc, char **argv, struct Trapframe *tf) {
+    if (argc != 4) {
+        cprintf("Usage: setperm va [P|W|U|C] [0|1]\n");
+        return 0;
+    }
+    uintptr_t va = strtol(argv[1], NULL, 0);
+    char perm = argv[2][0];
+    int set = strtol(argv[3], NULL, 0);
+
+    pte_t *pte = pgdir_walk(kern_pgdir, (void *)va, 0);
+    if (!pte || !(*pte & PTE_P)) {
+        cprintf("Error: VA 0x%08x not mapped\n", va);
+        return 0;
+    }
+
+    switch (perm) {
+        case 'P': set ? (*pte |= PTE_P) : (*pte &= ~PTE_P); break;
+        case 'W': set ? (*pte |= PTE_W) : (*pte &= ~PTE_W); break;
+        case 'U': set ? (*pte |= PTE_U) : (*pte &= ~PTE_U); break;
+        case 'C': set ? (*pte |= PTE_PWT) : (*pte &= ~PTE_PWT); break;
+        default: cprintf("Unknown permission flag\n"); return 0;
+    }
+    tlb_invalidate(kern_pgdir, (void *)va);
+    cprintf("Permissions updated for VA: 0x%08x\n", va);
+    return 0;
+}
+
+// Function to dump memory contents from a range of addresses
+int mon_memdump(int argc, char **argv, struct Trapframe *tf) {
+    if (argc != 3) {
+        cprintf("Usage: memdump start_addr end_addr\n");
+        return 0;
+    }
+    uintptr_t start = strtol(argv[1], NULL, 0);
+    uintptr_t end = strtol(argv[2], NULL, 0);
+
+    for (; start <= end; start += 16) {
+        cprintf("0x%08x: ", start);
+        for (int i = 0; i < 16; i += 4) {
+            if (start + i <= end) {
+                cprintf("%08x ", *(uint32_t *)(start + i));
+            }
+        }
+        cprintf("\n");
+    }
     return 0;
 }
