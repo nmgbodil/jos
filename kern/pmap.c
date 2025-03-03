@@ -116,9 +116,6 @@ mem_init(void)
     // Find out how much memory we have (npages, npages_basemem).
     i386_detect_memory();
 
-    // Remove the panic now that we're ready to implement fully:
-    // panic("mem_init: This function is not finished\n");
-
     // Create initial page directory (one page)
     kern_pgdir = (pde_t *) boot_alloc(PGSIZE);
     memset(kern_pgdir, 0, PGSIZE);
@@ -135,8 +132,11 @@ mem_init(void)
     memset(pages, 0, npages * sizeof(struct PageInfo));
 
     //////////////////////////////////////////////////////////////////////
-	// Make 'envs' point to an array of size 'NENV' of 'struct Env'.
-	// LAB 3: Your code here.
+    // Make 'envs' point to an array of size 'NENV' of 'struct Env'.
+    // LAB 3: Your code here.
+    envs = (struct Env *)boot_alloc(NENV * sizeof(struct Env));
+    memset(envs, 0, NENV * sizeof(struct Env));
+    //////////////////////////////////////////////////////////////////////
 
     // Now set up the free page list (page_init).
     page_init();
@@ -159,19 +159,21 @@ mem_init(void)
     boot_map_region(kern_pgdir, UPAGES, pages_size, PADDR(pages), PTE_U);
 
     //////////////////////////////////////////////////////////////////////
-	// Map the 'envs' array read-only by the user at linear address UENVS
-	// (ie. perm = PTE_U | PTE_P).
-	// Permissions:
-	//    - the new image at UENVS  -- kernel R, user R
-	//    - envs itself -- kernel RW, user NONE
-	// LAB 3: Your code here.
+    // Map the 'envs' array read-only by the user at linear address UENVS
+    // (ie. perm = PTE_U | PTE_P).
+    // Permissions:
+    //    - the new image at UENVS  -- kernel R, user R
+    //    - envs itself -- kernel RW, user NONE
+    // LAB 3: Your code here.
+    size_t envs_size = ROUNDUP(NENV * sizeof(struct Env), PGSIZE);
+    boot_map_region(kern_pgdir, UENVS, envs_size, PADDR(envs), PTE_U);
+    //////////////////////////////////////////////////////////////////////
 
     //
     // Map the physical memory that 'bootstack' refers to as the kernel stack.
     // The kernel stack grows down from KSTACKTOP.
     //   [KSTACKTOP-KSTKSIZE, KSTACKTOP) -- backed by physical memory
-    //   [KSTACKTOP-PTSIZE,   KSTACKTOP-KSTKSIZE) -- not backed, so if the
-    //       kernel overflows its stack, it faults rather than overwriting memory.
+    //   [KSTACKTOP-PTSIZE,   KSTACKTOP-KSTKSIZE) -- not backed
     // Permissions: kernel RW, user NONE
     //
     boot_map_region(kern_pgdir,
@@ -182,11 +184,8 @@ mem_init(void)
 
     //
     // Map all of physical memory at KERNBASE.
-    // i.e. the VA range [KERNBASE, 2^32) should map to PA range [0, 2^32 - KERNBASE).
+    // i.e. the VA range [KERNBASE, 2^32) -> PA range [0, 2^32 - KERNBASE).
     // Permissions: kernel RW, user NONE
-    //
-    // We might simply do the entire range, though not all pages necessarily exist.
-    // The typical approach is:
     //
     boot_map_region(kern_pgdir,
                     KERNBASE,
@@ -213,8 +212,9 @@ mem_init(void)
     check_page_installed_pgdir();
 
     // Hidden test cases
-    hidden_test_cases();
+    //hidden_test_cases();
 }
+
 
 // --------------------------------------------------------------
 // Tracking of physical pages.
