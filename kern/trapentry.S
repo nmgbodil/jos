@@ -82,38 +82,16 @@ TRAPHANDLER_NOEC(t_syscall, T_SYSCALL)
 /*
  * Lab 3: Your code here for _alltraps
  */
-.globl _alltraps
-_alltraps:
-    # pushal saves (EAX,ECX,EDX,EBX,ESP,EBP,ESI,EDI) in that order
-    pushal
 
-    # push %ds, then %es
+_alltraps:
     pushl %ds
     pushl %es
 
-    # Load kernel data segment into DS and ES
-    movw $GD_KD, %ax
-    movw %ax, %ds
-    movw %ax, %es
+    pushal
 
-    # Now pushl %esp as argument to trap()
+    movw $GD_KD, %bx
+    movw %bx, %ds
+    movw %bx, %es
+
     pushl %esp
-
     call trap
-
-    # Remove the argument from the stack
-    addl $4, %esp
-
-    # pop es, ds
-    popl %es
-    popl %ds
-
-    # popal to restore EDI, ESI, EBP, OESP, EBX, EDX, ECX, EAX
-    popal
-
-    # Now remove the trapno and errcode that macros put on stack
-    addl $8, %esp
-
-    # Return from interrupt
-    iret
-
