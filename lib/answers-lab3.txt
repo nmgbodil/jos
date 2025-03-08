@@ -1,0 +1,12 @@
+**Answer 1 (Why individual handlers):**  
+Having a unique handler function for each exception and interrupt ensures that the operating system can respond appropriately to the distinct context and requirements of each trap. 
+Some exceptions (like page faults) carry special error codes, while others (like divide-by-zero) do not; some hardware interrupts require reading specific device registers, whereas software traps do not. 
+If all traps arrived in a single, monolithic handler, the kernel would lose the clear separation of logic for different events, making it harder or impossible to perform specialized actions (for example, decoding error codes, diagnosing the specific reason for the trap, or sending appropriate signals to user processes).
+By contrast, JOS’s current design has a distinct entry point and a small assembly stub for each trap vector, which allows each vector to pass the correct error information into the kernel and ensures the OS can provide exactly the right response for each exception or interrupt type.
+
+**Answer 2 (Why `int $14` from user triggers a GP fault):**  
+In JOS, the page-fault handler’s IDT entry (vector 14) is restricted to privilege level zero. 
+When user code attempts `int $14`, the CPU checks the privilege level and sees that ring 3 (user mode) is not allowed to directly invoke a ring 0-only entry. 
+This mismatch causes the CPU to raise a General Protection Fault (#13) instead of invoking the page-fault handler (#14). 
+If the kernel had actually set up IDT entry 14 to be callable from ring 3, `int $14` would jump straight into the page-fault handler at user request, which would undermine security and break the lab’s intended behavior.
+ Hence, user/softint ends up producing a GP fault (trap 13), exactly as the lab expects.
