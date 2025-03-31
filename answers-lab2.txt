@@ -1,0 +1,53 @@
+## **Answers to the Questions**
+
+(a) What entries in the page directory have been filled in at this point?  
+
+    +-----+----------------------+---------------------------------------+
+    |Entry| Base Virtual Address |  Points to (logically)                |
+    +=====+======================+=======================================+
+    |1023 | 0xFFC00000           | Points to the page table for the top 4 MB of physical memory |
+    +-----+----------------------+---------------------------------------+
+    |1022 | 0xFF800000           | Kernel’s mapped memory (upper 4 MB)   |
+    +-----+----------------------+---------------------------------------+
+    |1021 | 0xFF400000           | Another kernel page table             |
+    +-----+----------------------+---------------------------------------+
+    |.    | ?                    | ?                                     |
+    +-----+----------------------+---------------------------------------+
+    |768  | 0xF0000000           | Kernel’s base virtual memory, mapped to physical memory  |
+    +-----+----------------------+---------------------------------------+
+    |2    | 0x00800000           | Points to its own 4 MB table                                    |
+    +-----+----------------------+---------------------------------------+
+    |1    | 0x00400000           | Points to a table covering the next 4 MB.                                     |
+    +-----+----------------------+---------------------------------------+
+    |0    | 0x00000000           | Points to a page table for the first 4 MB (user space)                 |
+    +-----+----------------------+---------------------------------------+
+
+
+(b) Why do user programs not read/write kernel memory? What specific mechanism enforces this?
+
+User programs cannot access kernel memory because the kernel’s page tables mark its regions as not 
+--user-accessible (the PTE_U flag is not set). 
+This hardware-enforced permission prevents any code running in user mode from reading or writing into the 
+--kernel’s memory space.
+Thus, hardware-level paging permission bits protect the kernel from user-mode access.
+
+
+(c) What is the maximum amount of physical memory that this OS can support? Why?
+
+By default in JOS, the kernel remaps 256MB of physical memory (from physical address 0 up to 256MB) 
+--starting at virtual address `KERNBASE` (0xf0000000). 
+Hence, the OS is laid out to handle up to 256MB of physical RAM by direct mapping.  
+
+
+(d) How much space overhead is there for managing memory at the maximum? How is this overhead broken down?
+
+You need one 4 KB page directory with up to 1024 page tables at 4 KB each. 
+That’s approximately 4 MB of space reserved just for the paging structures.
+
+
+(e) When do we switch to EIP above KERNBASE, and why can we execute for a while at a low EIP even with paging on*?
+
+After enabling paging, the boot code can still execute at a low EIP because the early page directory provides 
+--an identity mapping for the first 4 MB. 
+Once paging is on, the kernel then jumps to a high virtual address (above KERNBASE) where the kernel is linked,
+-- and this dual mapping makes the transition seamless.

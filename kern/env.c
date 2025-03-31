@@ -119,7 +119,20 @@ env_init(void)
 {
 	// Set up envs array
 	// LAB 3: Your code here.
-
+    struct Env* prev = NULL;
+    for(size_t idx = 0; idx < NENV; idx++) 
+    {
+        envs[idx] = (struct Env) {
+           .env_status = ENV_FREE,
+           .env_link = NULL,
+           .env_id = 0,
+        };
+        if(prev) // Updating All Links To Point From Prev To The Next
+            prev -> env_link = &envs[idx];
+        prev = &envs[idx];
+    }
+    // Updating Env Free List To Be The First Element
+    env_free_list = &envs[0]; 
 	// Per-CPU part of the initialization
 	env_init_percpu();
 }
@@ -182,11 +195,15 @@ env_setup_vm(struct Env *e)
 	//    - The functions in kern/pmap.h are handy.
 
 	// LAB 3: Your code here.
+    p -> pp_ref++; 
+    e -> env_pgdir = (pde_t*) page2kva(p); // Setting env pgdir
+    for(size_t idx = PDX(UTOP); idx < NPDENTRIES; idx++) { // TA helped fix - Pranab Dash
+        e -> env_pgdir[idx] = kern_pgdir[idx];
+    }
 
 	// UVPT maps the env's own page table read-only.
 	// Permissions: kernel R, user R
 	e->env_pgdir[PDX(UVPT)] = PADDR(e->env_pgdir) | PTE_P | PTE_U;
-
 	return 0;
 }
 
@@ -279,6 +296,19 @@ region_alloc(struct Env *e, void *va, size_t len)
 	//   'va' and 'len' values that are not page-aligned.
 	//   You should round va down, and round (va + len) up.
 	//   (Watch out for corner-cases!)
+    
+    // Rounding Va And Len To Fit The Proper Size
+    va = ROUNDDOWN(va, PGSIZE); 
+	len = (uint32_t) ROUNDUP(va + len, PGSIZE);
+
+    struct PageInfo* page;
+
+    // Iterating Va -> Va + Len
+    for(void* page_pos = va; page_pos < (void*) len; page_pos += PGSIZE) {
+        if((page = page_alloc(ALLOC_ZERO)) == NULL) // Check Flags
+            panic("Error Allocating A Page");
+        page_insert(e -> env_pgdir, page, page_pos, PTE_U | PTE_W);
+    }
 }
 
 //
@@ -335,11 +365,31 @@ load_icode(struct Env *e, uint8_t *binary)
 	//  What?  (See env_run() and env_pop_tf() below.)
 
 	// LAB 3: Your code here.
+                             
+    struct Elf* elf = (struct Elf*) binary; // Casting Binary To An Elf
+    if(elf -> e_magic != ELF_MAGIC) 
+        panic("Error e_magic not set");
 
+    lcr3(PADDR(e -> env_pgdir)); // Loading The Env Pgdir
+
+    struct Proghdr* ph = (struct Proghdr*) (binary + elf -> e_phoff); // First PH
+    
+    for(struct Proghdr* curr_ph = ph; curr_ph < ph + elf -> e_phnum; curr_ph++) {
+        if(curr_ph -> p_type == ELF_PROG_LOAD) {
+            // Allocating The Virtual Region To The Pages
+            region_alloc(e, (void*)curr_ph->p_va, curr_ph -> p_memsz);
+            memcpy((void*)curr_ph->p_va, binary + curr_ph->p_offset, curr_ph->p_filesz);
+        }
+    }
+    
+    e -> env_tf.tf_eip = elf -> e_entry; // Setting The IP At The Elf
+                                            
 	// Now map one page for the program's initial stack
 	// at virtual address USTACKTOP - PGSIZE.
+    region_alloc(e, (void*)(USTACKTOP - PGSIZE), PGSIZE);
 
 	// LAB 3: Your code here.
+    lcr3(PADDR(kern_pgdir)); // Loading The Kern Pgdir
 }
 
 //
@@ -353,6 +403,11 @@ void
 env_create(uint8_t *binary, enum EnvType type)
 {
 	// LAB 3: Your code here.
+    struct Env* e;
+    if(env_alloc(&e, 0) != 0)
+        panic("Error During Environment Allocation");
+    load_icode(e,binary);
+    e -> env_type = type; 
 }
 
 //
@@ -437,6 +492,7 @@ env_destroy(struct Env *e)
 // Restores the register values in the Trapframe with the 'iret' instruction.
 // This exits the kernel and starts executing some environment's code.
 //
+//
 // This function does not return.
 //
 void
@@ -483,7 +539,14 @@ env_run(struct Env *e)
 	//	e->env_tf to sensible values.
 
 	// LAB 3: Your code here.
-
-	panic("env_run not yet implemented");
+    pte_t* t = pgdir_walk(kern_pgdir, (void*)0x800020, 0);
+	if(curenv != NULL && curenv->env_status == ENV_RUNNING) { 
+		curenv->env_status = ENV_RUNNABLE;
+	}
+    curenv = e; // Setting Current Environment
+    e -> env_status = ENV_RUNNING; // Status -> Running
+    e -> env_runs++;
+    lcr3(PADDR(e -> env_pgdir)); // Changing Dir In CR3
+    env_pop_tf(&e -> env_tf);
 }
 

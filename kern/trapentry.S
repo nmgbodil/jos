@@ -55,8 +55,44 @@
 // HINT 3 : READ Intel's manual to check if the trap includes an error code
 //          or not...
 
+TRAPHANDLER_NOEC(t_divide,  T_DIVIDE)
+TRAPHANDLER_NOEC(t_debug,   T_DEBUG)
+TRAPHANDLER_NOEC(t_nmi,     T_NMI)
+TRAPHANDLER_NOEC(t_brkpt,   T_BRKPT)
+TRAPHANDLER_NOEC(t_oflow,   T_OFLOW)
+TRAPHANDLER_NOEC(t_bound,   T_BOUND)
+TRAPHANDLER_NOEC(t_illop,   T_ILLOP)
+TRAPHANDLER_NOEC(t_device,  T_DEVICE)
+/* Double Fault DOES push an error code, but it is always 0 */
+TRAPHANDLER(t_dblflt,       T_DBLFLT)
+/* T_COPROC(9) is unused in JOS. */
+TRAPHANDLER(t_tss,          T_TSS)
+TRAPHANDLER(t_segnp,        T_SEGNP)
+TRAPHANDLER(t_stack,        T_STACK)
+TRAPHANDLER(t_gpflt,        T_GPFLT)
+TRAPHANDLER(t_pgflt,        T_PGFLT)
+/* T_RES(15) is reserved */
+TRAPHANDLER_NOEC(t_fperr,   T_FPERR)
+/* #17 alignment check DOES push an error code. */
+TRAPHANDLER(t_align,        T_ALIGN)
+/* #18 machine check has no error code. */
+TRAPHANDLER_NOEC(t_mchk,    T_MCHK)
+TRAPHANDLER_NOEC(t_simderr, T_SIMDERR)
+TRAPHANDLER_NOEC(t_syscall, T_SYSCALL)
+
 /*
  * Lab 3: Your code here for _alltraps
  */
 
+_alltraps:
+    pushl %ds
+    pushl %es
 
+    pushal
+
+    movw $GD_KD, %bx
+    movw %bx, %ds
+    movw %bx, %es
+
+    pushl %esp
+    call trap
