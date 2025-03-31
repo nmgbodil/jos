@@ -263,7 +263,10 @@ mem_init_mp(void)
 	//     Permissions: kernel RW, user NONE
 	//
 	// LAB 4: Your code here:
-
+    for(int idx = 0; idx < NCPU; idx++) {
+        uint32_t kstacktop_idx = KSTACKTOP - idx * (KSTKSIZE + KSTKGAP);
+        boot_map_region(kern_pgdir, kstacktop_idx - KSTKSIZE, KSTKSIZE, PADDR(percpu_kstacks[idx]), PTE_W);
+    }
 }
 
 // --------------------------------------------------------------
@@ -300,36 +303,41 @@ page_init(void)
 	// Change the code to reflect this.
 	// NB: DO NOT actually touch the physical memory corresponding to
 	// free pages!
-	size_t i;
-	extern char end[];
-    uintptr_t final_boot_alloc = (uintptr_t)boot_alloc(0);
-    size_t first_free_pgnum = PGNUM(PADDR((void *) final_boot_alloc));
-	for (i = 0; i < npages; i++) {
-		// Page 0 is in use
-        if (i == 0) {
-            pages[i].pp_ref = 1;
-            pages[i].pp_link = NULL;
-            continue;
-        }
-        // IO hole: [IOPHYSMEM, EXTPHYSMEM)
-        if (i >= PGNUM(IOPHYSMEM) && i < PGNUM(EXTPHYSMEM)) {
-            pages[i].pp_ref = 1;  
-            pages[i].pp_link = NULL;
-            continue;
-        }
-        // Any pages that the kernel is currently using 
-        // (from EXTPHYSMEM up to first_free_pgnum) must be in use
-        if (i >= PGNUM(EXTPHYSMEM) && i < first_free_pgnum) {
-            pages[i].pp_ref = 1;
+    
+    // Base Memory -> The Entire 4GB 
+    pages[0].pp_ref  = 1;
+    pages[0].pp_link = NULL;
+
+    // figure out up to which physical page we've used in boot_alloc
+    uint32_t first_unused_pgno = PADDR((void *)boot_alloc(0)) / PGSIZE;
+
+    // Step 2: mark IO hole in use:
+    // from IOPHYSMEM up to first_unused_pgno (but not beyond)
+    for (size_t i = PGNUM(IOPHYSMEM); i < first_unused_pgno; i++) {
+        pages[i].pp_ref  = 1;
+        pages[i].pp_link = NULL;
+    }
+
+    page_free_list = NULL;
+
+    // step 3: go through all pages and free the ones not in use
+    for (size_t i = 0; i < npages; i++) {
+        // if not in use...
+        if (pages[i].pp_ref == 1)
+            continue;  // skip used pages
+
+        // specifically skip MPENTRY_PADDR
+        if (i == (MPENTRY_PADDR / PGSIZE)) {
+            pages[i].pp_ref  = 1;
             pages[i].pp_link = NULL;
             continue;
         }
 
-        // Everything else is free
-		pages[i].pp_ref = 0;
-		pages[i].pp_link = page_free_list;
-		page_free_list = &pages[i];
-	}
+        // otherwise, it’s free
+        pages[i].pp_ref  = 0;
+        pages[i].pp_link = page_free_list;
+        page_free_list   = &pages[i];
+    }
 }
 
 //
@@ -540,7 +548,16 @@ mmio_map_region(physaddr_t pa, size_t size)
 	// Hint: The staff solution uses boot_map_region.
 	//
 	// Your code here:
-	panic("mmio_map_region not implemented");
+    size = ROUNDUP(size, PGSIZE);
+
+    if(base + size > MMIOLIM) {
+        panic("mmio_map_region: MMIOLIM exceeded!");
+    }
+    boot_map_region(kern_pgdir, base, size, pa, PTE_PCD | PTE_PWT | PTE_W);
+
+    uintptr_t oldbase = base;
+    base += size;
+    return (void*)oldbase;
 }
 
 static uintptr_t user_mem_check_addr;

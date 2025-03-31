@@ -29,7 +29,21 @@ sched_yield(void)
 	// below to halt the cpu.
 
 	// LAB 4: Your code here.
+	
+    int start_idx = (curenv == NULL) ? 0 : (ENVX(curenv->env_id) + 1) % NENV;
 
+    // Search for the next runnable environment in a circular fashion
+    for (int i = 0; i < NENV; i++) {
+        int idx = (start_idx + i) % NENV;
+        if (envs[idx].env_status == ENV_RUNNABLE) {
+            env_run(&envs[idx]);
+        }
+    }
+
+    // If no runnable environments are found, check if the current environment is still running
+    if (curenv && curenv->env_status == ENV_RUNNING) {
+        env_run(curenv);
+    }
 	// sched_halt never returns
 	sched_halt();
 }
@@ -76,7 +90,7 @@ sched_halt(void)
 		"pushl $0\n"
         // LAB 4:
 		// Uncomment the following line after completing exercise 13
-		//"sti\n"
+		"sti\n"
 		"1:\n"
 		"hlt\n"
 		"jmp 1b\n"

@@ -23,8 +23,25 @@ int32_t
 ipc_recv(envid_t *from_env_store, void *pg, int *perm_store)
 {
 	// LAB 4: Your code here.
-	panic("ipc_recv not implemented");
-	return 0;
+	void *actual_dstva = (pg == NULL) ? (void *) UTOP : pg;
+
+    // Call sys_ipc_recv
+    int rc = sys_ipc_recv(actual_dstva);
+    if (rc < 0) {
+        // sys_ipc_recv returned an error
+        return rc;
+    }
+
+    // If here, rc == 0 => a message arrived successfully
+    if (from_env_store) {
+        *from_env_store = thisenv->env_ipc_from;
+    }
+    if (perm_store) {
+        *perm_store = thisenv->env_ipc_perm;
+    }
+
+    // Return the value sent by the sender
+    return thisenv->env_ipc_value;
 }
 
 // Send 'val' (and 'pg' with 'perm', if 'pg' is nonnull) to 'toenv'.
@@ -39,7 +56,25 @@ void
 ipc_send(envid_t to_env, uint32_t val, void *pg, int perm)
 {
 	// LAB 4: Your code here.
-	panic("ipc_send not implemented");
+	// If 'pg' is NULL, just pass UTOP so no page is mapped
+    void *actual_srcva = pg ? pg : (void *) UTOP;
+    int result;
+
+    // Keep trying until the destination is actually receiving
+    while (1) {
+        result = sys_ipc_try_send(to_env, val, actual_srcva, perm);
+        if (result == -E_IPC_NOT_RECV) {
+            // The receiver isn't ready; yield and try again
+            sys_yield();
+            continue;
+        }
+        if (result != 0) {
+            // Some other error
+            panic("ipc_send: sys_ipc_try_send returned error %e", result);
+        }
+        // success: break out of loop
+        break;
+    }
 }
 
 // Find the first environment of the given type.  We'll use this to
